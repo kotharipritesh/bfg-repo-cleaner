@@ -49,5 +49,10 @@ pomExtra in ThisBuild := (
         <name>Roberto Tyley</name>
         <url>https://github.com/rtyley</url>
       </developer>
+      <developer>
+        <id>vlsi</id>
+        <name>Vladimir Sitnikov</name>
+        <url>https://github.com/vlsi</url>
+      </developer>
     </developers>
 )
