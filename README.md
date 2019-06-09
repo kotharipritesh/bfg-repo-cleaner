@@ -3,6 +3,18 @@ BFG Repo-Cleaner [![Build Status](https://travis-ci.org/rtyley/bfg-repo-cleaner.
 
 _Removes large or troublesome blobs like git-filter-branch does, but faster - and written in Scala_ - [Fund the BFG](https://j.mp/fund-bfg)
 
+Note: https://github.com/rtyley/bfg-repo-cleaner does not accept PRs for some time, so the fork is made
+to incorporate new features.
+
+Notable changes
+---------------
+
+`--no-private` option to make BFG always include `Former-commit-id` header
+`--blob-exec` option for shell-based blob processing
+
+About
+-----
+
 ```
 $ bfg --strip-blobs-bigger-than 1M --replace-text banned.txt repo.git
 ```
