@@ -36,9 +36,8 @@ import com.madgag.textmatching.{Glob, TextMatcher, TextMatcherType, TextReplacem
 import org.eclipse.jgit.internal.storage.file.FileRepository
 import org.eclipse.jgit.lib._
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
-import scopt.{OptionParser, Read}
-
 import scalax.file.ImplicitConversions._
+import scopt.{OptionParser, Read}
 
 
 object CLIConfig {
@@ -91,6 +90,25 @@ object CLIConfig {
     opt[String]("filter-content-size-threshold").abbr("fs").valueName("<size>").text("only do file-content filtering on files smaller than <size> (default is %1$d bytes)".format(CLIConfig().filterSizeThreshold)).action {
       (v, c) => c.copy(filterSizeThreshold = ByteSize.parse(v))
     }
+    opt[Map[String,String]]("blob-exec")
+      .valueName("command=./convert,filemask=.txt$,keepinput=true,cacheonly=false,minsizereduction=0").text("execute the system command for each blob")
+      .validate { x =>
+        if (!x.contains("command")) {
+          failure("command=... is expected to specify command to execute")
+        } else {
+          val cacheOnly = x.get("cacheonly").exists { x => x.toBoolean }
+          if (!cacheOnly && !new File(x("command")).exists()) {
+            failure(s"file ${x("command")} does not exist (file presence is mandatory when cacheOnly=false)")
+          } else if (!x.contains("filemask")) {
+            failure("filemask=... is expected to specify filename regex to filter")
+          } else {
+            success
+          }
+        }
+      }.action {
+      (v, c) => c.copy(blobExec = Some(v))
+    }
+
     opt[String]('p', "protect-blobs-from").valueName("<refs>").text("protect blobs that appear in the most recent versions of the specified refs (default is 'HEAD')").action {
       (v, c) => c.copy(protectBlobsFromRevisions = v.split(',').toSet)
     }
@@ -131,6 +149,7 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
                      filenameFilters: Seq[Filter[String]] = Nil,
                      filterSizeThreshold: Long = BlobTextModifier.DefaultSizeThreshold,
                      textReplacementExpressions: Traversable[String] = List.empty,
+                     blobExec: Option[Map[String,String]] = None,
                      stripBlobsWithIds: Option[Set[ObjectId]] = None,
                      lfsConversion: Option[String] = None,
                      strictObjectChecking: Boolean = false,
@@ -180,6 +199,25 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
   lazy val lfsBlobConverter: Option[LfsBlobConverter] = lfsConversion.map { lfsGlobExpr =>
     new LfsBlobConverter(lfsGlobExpr, repo)
   }
+  
+  val blobExecModifier: Option[BlobExecModifier] = blobExec.map {
+    execCommand =>
+      new BlobExecModifier {
+        val command = execCommand("command")
+
+        val fileMask = execCommand("filemask").r
+
+        // Defaults to true
+        val keepInput = execCommand.get("keepinput").forall { x => x.toBoolean }
+
+        // Defaults to false
+        val cacheOnly = execCommand.get("cacheonly").exists { x => x.toBoolean }
+
+        val minSizeReduction = execCommand.get("minsizereduction").map { x => x.toLong }.getOrElse(0)
+
+        val threadLocalObjectDBResources: ThreadLocalObjectDatabaseResources = repo.getObjectDatabase.threadLocalResources
+      }
+  }
 
   lazy val privateDataRemoval = sensitiveData.getOrElse(Seq(fileDeletion, folderDeletion, blobTextModifier).flatten.nonEmpty)
 
@@ -218,7 +256,7 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
       }
     }
 
-    Seq(blobsByIdRemover, blobRemover, fileDeletion, blobTextModifier, lfsBlobConverter).flatten
+    Seq(blobsByIdRemover, blobRemover, fileDeletion, blobTextModifier, lfsBlobConverter, blobExecModifier).flatten
   }
 
   lazy val definesNoWork = treeBlobCleaners.isEmpty && folderDeletion.isEmpty && treeEntryListCleaners.isEmpty
