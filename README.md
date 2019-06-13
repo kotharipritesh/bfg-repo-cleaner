@@ -11,6 +11,7 @@ Notable changes
 
 `--no-private` option to make BFG always include `Former-commit-id` header
 `--blob-exec` option for shell-based blob processing
+`--filter-eol` option to filter end of lines in text files
 
 About
 -----

@@ -19,6 +19,8 @@ object Dependencies {
 
   val scalatest = "org.scalatest" %% "scalatest" % "3.0.4"
 
+  val apache_commons = "org.apache.commons" % "commons-io" % "1.3.2"
+
   val madgagCompress = "com.madgag" % "util-compress" % "1.33"
 
   val textmatching = "com.madgag" %% "scala-textmatching" % "2.3"

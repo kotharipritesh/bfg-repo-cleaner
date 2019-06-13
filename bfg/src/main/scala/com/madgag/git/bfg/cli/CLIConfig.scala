@@ -39,6 +39,8 @@ import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import scalax.file.ImplicitConversions._
 import scopt.{OptionParser, Read}
 
+import scala.util.matching.Regex
+
 
 object CLIConfig {
   val parser = new OptionParser[CLIConfig]("bfg") {
@@ -108,6 +110,20 @@ object CLIConfig {
       }.action {
       (v, c) => c.copy(blobExec = Some(v))
     }
+    opt[Map[String, String]]("filter-eol")
+      .unbounded()
+      .valueName("eol=crlf|lf,include=.txt$,exclude=readme.txt")
+      .text("Normalize line endings for text files (can be specified multiple times)")
+      .validate { x =>
+        if (!x.getOrElse("eol", "").matches("crlf|lf")) {
+          failure("eol=crlf|lf is expected. Actual is " + x.getOrElse("eol", ""))
+        } else {
+          success
+        }
+      }
+      .action {
+        (v, c) => c.copy(eol = c.eol :+ v)
+      }
 
     opt[String]('p', "protect-blobs-from").valueName("<refs>").text("protect blobs that appear in the most recent versions of the specified refs (default is 'HEAD')").action {
       (v, c) => c.copy(protectBlobsFromRevisions = v.split(',').toSet)
@@ -153,6 +169,7 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
                      filterSizeThreshold: Long = BlobTextModifier.DefaultSizeThreshold,
                      textReplacementExpressions: Traversable[String] = List.empty,
                      blobExec: Option[Map[String,String]] = None,
+                     eol: Seq[Map[String,String]] = Nil,
                      stripBlobsWithIds: Option[Set[ObjectId]] = None,
                      lfsConversion: Option[String] = None,
                      strictObjectChecking: Boolean = false,
@@ -203,7 +220,7 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
     new LfsBlobConverter(lfsGlobExpr, repo)
   }
   
-  val blobExecModifier: Option[BlobExecModifier] = blobExec.map {
+  lazy val blobExecModifier: Option[BlobExecModifier] = blobExec.map {
     execCommand =>
       new BlobExecModifier {
         val command = execCommand("command")
@@ -219,6 +236,16 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
         val minSizeReduction = execCommand.get("minsizereduction").map { x => x.toLong }.getOrElse(0)
 
         val threadLocalObjectDBResources: ThreadLocalObjectDatabaseResources = repo.getObjectDatabase.threadLocalResources
+      }
+  }
+
+  lazy val eolModifiers: Seq[EolModifier] = eol.map {
+    eolParams =>
+      new EolModifier {
+        override val threadLocalObjectDBResources: ThreadLocalObjectDatabaseResources = repo.getObjectDatabase.threadLocalResources
+        override val include: Regex = eolParams.get("include").map { x => x.r }.orNull
+        override val exclude: Regex = eolParams.get("exclude").map { x => x.r }.orNull
+        override val eol: String = eolParams("eol")
       }
   }
 
@@ -259,7 +286,7 @@ case class CLIConfig(stripBiggestBlobs: Option[Int] = None,
       }
     }
 
-    Seq(blobsByIdRemover, blobRemover, fileDeletion, blobTextModifier, lfsBlobConverter, blobExecModifier).flatten
+    Seq(blobsByIdRemover, blobRemover, fileDeletion, blobTextModifier).flatten ++ eolModifiers ++ Seq(lfsBlobConverter, blobExecModifier).flatten
   }
 
   lazy val definesNoWork = treeBlobCleaners.isEmpty && folderDeletion.isEmpty && treeEntryListCleaners.isEmpty
